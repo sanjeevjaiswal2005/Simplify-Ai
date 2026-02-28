@@ -1,0 +1,1221 @@
+// import Document from "../models/Document.js";
+// import FlashCard from "../models/FlashCard.js";
+// import Quiz from "../models/Quiz.js";
+// import { extractTextFromPDF } from '../utils/pdfParser.js';
+// import { chunkText } from '../utils/textChunker.js';
+// import fs from 'fs/promises';
+// import axios from 'axios';
+// import crypto from 'crypto';
+
+// // --- HELPERS ---
+// const validateDoc = (doc) => {
+//     if (!doc || !doc.extractedText || doc.extractedText.trim().length === 0) {
+//         return "Document text is empty or missing.";
+//     }
+//     return null;
+// };
+
+// // List all flashcard generations for the authenticated user
+// export const getUserFlashcards = async (req, res) => {
+//     try {
+//         const flashcards = await FlashCard.find({ userId: req.user._id })
+//             .populate('documentId', 'title')
+//             .sort({ createdAt: -1 })
+//             .lean();
+//         res.status(200).json({ success: true, data: flashcards });
+//     } catch (error) {
+//         console.error("❌ GET USER FLASHCARDS ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // List flashcard generations for a specific document
+// export const getDocFlashcards = async (req, res) => {
+//     try {
+//         const { id } = req.params; // document id
+//         const flashcards = await FlashCard.find({ userId: req.user._id, documentId: id })
+//             .sort({ createdAt: -1 })
+//             .lean();
+//         res.status(200).json({ success: true, data: flashcards });
+//     } catch (error) {
+//         console.error("❌ GET DOC FLASHCARDS ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // Delete a single flashcard generation by its id
+// export const deleteFlashcard = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const deleted = await FlashCard.findOneAndDelete({ _id: id, userId: req.user._id });
+//         if (!deleted) return res.status(404).json({ success: false, message: "Flashcard not found" });
+//         res.status(200).json({ success: true, message: "Deleted" });
+//     } catch (error) {
+//         console.error("❌ DELETE FLASHCARD ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// const processPDF = async (documentId, filePath) => {
+//     try {
+//         const { text } = await extractTextFromPDF(filePath);
+//         const chunks = chunkText(text, 500, 50);
+//         await Document.findByIdAndUpdate(documentId, {
+//             extractedText: text,
+//             chunks: chunks.map((chunk, index) => ({
+//                 content: typeof chunk === 'string' ? chunk : chunk.content,
+//                 chunkIndex: index,
+//                 pageNumber: 0 
+//             })),
+//             status: "ready", 
+//         });
+//         console.log(`✅ Document ${documentId} is READY`);
+//     } catch (error) {
+//         await Document.findByIdAndUpdate(documentId, { status: "failed" });
+//     }
+// };
+
+// // --- CRUD CONTROLLERS ---
+
+// // documentController.js ke andar uploadDocument function mein:
+// // Aisa hona chahiye
+// export const uploadDocument = async (req, res) => {
+//     try {
+//         if (!req.file) {
+//             return res.status(400).json({ success: false, message: "No file uploaded" });
+//         }
+
+//         // 🔥 SABSE ZAROORI BADLAV:
+//         // Localhost mein hum path khud banate the, par Cloudinary khud URL deta hai 'req.file.path' mein.
+//         const fileUrl = req.file.path; 
+
+//         const newDoc = await Document.create({
+//             userId: req.user.id,
+//             title: req.body.title || req.file.originalname,
+//             fileName: req.file.originalname,
+//             filePath: fileUrl, // ✅ Yahan pakka 'fileUrl' hi hona chahiye
+//             filesize: req.file.size,
+//             status: "ready"
+//         });
+
+//         res.status(201).json({ success: true, data: newDoc });
+//     } catch (error) {
+//         console.error("Upload Error:", error);
+//         res.status(500).json({ success: false, message: "Server Error" });
+//     }
+// };
+
+// export const getDocument = async (req, res) => {
+//     try {
+//         const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+//         if (!document) return res.status(404).json({ success: false, message: "Not found" });
+//         res.status(200).json({ success: true, data: document });
+//     } catch (error) { 
+//         res.status(500).json({ success: false, message: error.message }); 
+//     }
+// };
+
+// export const deleteDocument = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const document = await Document.findById(id);
+
+//         if (!document) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: "Document not found"
+//             });
+//         }
+
+//         if (document.userId.toString() !== req.user._id.toString()) {
+//             return res.status(401).json({
+//                 success: false,
+//                 message: "Unauthorized"
+//             });
+//         }
+
+//         await Document.findByIdAndDelete(id);
+//         await Quiz.deleteMany({ documentId: id });
+
+//         res.status(200).json({
+//             success: true,
+//             message: "Document deleted successfully"
+//         });
+
+//     } catch (error) {
+//         console.error("❌ DELETE DOC ERROR:", error.message);
+//         res.status(500).json({
+//             success: false,
+//             message: "Server error"
+//         });
+//     }
+// };
+
+// export const updateDocument = async (req, res) => {
+//     try {
+//         const document = await Document.findOneAndUpdate(
+//             { _id: req.params.id, userId: req.user._id }, 
+//             { title: req.body.title }, 
+//             { new: true }
+//         );
+//         res.status(200).json({ success: true, data: document });
+//     } catch (error) { 
+//         res.status(500).json({ success: false, message: error.message }); 
+//     }
+// };
+
+// // --- CHAT LOGIC (GOOGLE GEMINI) ---
+// export const askAI = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const { question } = req.body;
+//         const document = await Document.findById(id);
+//         const apiKey = process.env.GEMINI_API_KEY;
+
+//         const errorMsg = validateDoc(document);
+//         if (errorMsg) return res.status(400).json({ success: false, message: errorMsg });
+
+//         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+//         const payload = {
+//             contents: [{
+//                 parts: [{ text: `Text: ${document.extractedText.slice(0, 15000)}\n\nQuestion: ${question}` }]
+//             }]
+//         };
+
+//         const response = await axios.post(url, payload);
+//         if (response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+//             const answer = response.data.candidates[0].content.parts[0].text;
+//             return res.status(200).json({ success: true, answer });
+//         } else {
+//             throw new Error("Invalid response from AI");
+//         }
+//     } catch (error) {
+//         console.error("❌ CHAT ERROR:", error.message);
+//         res.status(error.response?.status || 500).json({ success: false, message: "AI Chat Error" });
+//     }
+// };
+// //flashcard generation
+// export const generateFlashcards = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const document = await Document.findById(id);
+//         if (!document) return res.status(404).json({ success: false, message: "Doc not found" });
+
+//         const validationError = validateDoc(document);
+//         if (validationError) return res.status(400).json({ success: false, message: validationError });
+
+//         // 🔥 Dynamic Context: Randomly slicing the text
+//         const textLength = document.extractedText.length;
+//         const randomOffset = textLength > 3500 ? Math.floor(Math.random() * (textLength - 3500)) : 0;
+//         const textChunk = document.extractedText.slice(randomOffset, randomOffset + 3500);
+
+//         // 🔥 Variation token for backend use only
+//         const variation = crypto.randomBytes(4).toString('hex');
+
+//         const prompt = `
+//             DOCUMENT CONTENT: ${textChunk}
+            
+//             TASK: Generate exactly 5 unique flashcards. 
+//             STRICT RULES:
+//             1. Return ONLY a valid JSON array: [{"question":"...","answer":"..."}].
+//             2. DO NOT include any IDs, tokens, or strings like "${variation}" in the output.
+//             3. Focus on different concepts than a typical summary.
+//         `;
+
+//         const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+//             "model": "google/gemini-2.0-flash-001",
+//             "messages": [
+//                 { "role": "system", "content": `You are a study assistant. Internal session ID: ${variation}. Never repeat this ID in responses.` },
+//                 { "role": "user", "content": prompt }
+//             ],
+//             "temperature": 0.85
+//         }, {
+//             headers: { 
+//                 "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+//                 "Content-Type": "application/json"
+//             },
+//             timeout: 60000
+//         });
+
+//         const rawText = response.data?.choices?.[0]?.message?.content || "";
+//         const jsonMatch = rawText.match(/\[.*\]/s);
+
+//         if (!jsonMatch) throw new Error("AI returned invalid JSON");
+//         const flashcards = JSON.parse(jsonMatch[0]);
+
+//         await FlashCard.create({ userId: req.user._id, documentId: id, cards: flashcards });
+//         res.status(200).json({ success: true, flashcards });
+        
+//     } catch (error) {
+//         console.error("❌ FLASHCARD ERROR:", error.message);
+//         res.status(500).json({ success: false, message: "Sync Error" });
+//     }
+// };
+// // --- QUIZ LOGIC ---
+// export const generateQuiz = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const { count = 10 } = req.body;
+//         const quizCount = Math.max(5, Math.min(15, parseInt(count) || 10));
+
+//         const document = await Document.findById(id);
+//         if (!document) return res.status(404).json({ success: false, message: "Text not ready" });
+
+//         const textLength = document.extractedText.length;
+//         const randomOffset = textLength > 4500 ? Math.floor(Math.random() * (textLength - 4500)) : 0;
+//         const context = document.extractedText.slice(randomOffset, randomOffset + 4500);
+        
+//         const variation = crypto.randomBytes(4).toString('hex');
+
+//         const prompt = `
+//             CONTEXT: ${context}
+//             TASK: Generate exactly ${quizCount} unique MCQs. 
+//             RULES: 
+//             - Return ONLY JSON: [{"question": "...", "options": ["a", "b", "c", "d"], "correctAnswer": "..."}]
+//             - NO internal IDs or session tokens in the text.
+//         `;
+
+//         const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+//             "model": "google/gemini-2.0-flash-001",
+//             "messages": [
+//                 { "role": "system", "content": `Random seed: ${variation}. Generate new variations of questions.` },
+//                 { "role": "user", "content": prompt }
+//             ],
+//             "temperature": 0.8
+//         }, {
+//             headers: { "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}` },
+//             timeout: 60000
+//         });
+
+//         const rawText = response.data?.choices?.[0]?.message?.content || "";
+//         const jsonMatch = rawText.match(/\[.*\]/s);
+//         res.status(200).json({ success: true, data: JSON.parse(jsonMatch[0]) });
+
+//     } catch (error) {
+//         res.status(500).json({ success: false, message: "Quiz Error" });
+//     }
+// };
+// // @desc    Save Quiz Result
+// export const saveQuizResult = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const { score, totalQuestions, title, questions, userAnswers, timeSpent } = req.body;
+
+//         let quizTitle = title;
+//         if (!quizTitle) {
+//             const doc = await Document.findById(id);
+//             quizTitle = doc ? doc.title : "Untitled Quiz";
+//         }
+
+//         const quizResult = await Quiz.create({
+//             userId: req.user._id,
+//             documentId: id,
+//             title: quizTitle,
+//             score,
+//             totalQuestions,
+//             questions: questions || [],
+//             userAnswers: userAnswers || [],
+//             accuracy: (score / totalQuestions) * 100,
+//             xpEarned: score * 10,
+//             timeSpent: timeSpent || 0,
+//             status: 'completed'
+//         });
+
+//         res.status(201).json({ success: true, data: quizResult });
+//     } catch (error) {
+//         console.error("❌ SAVE QUIZ ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // @desc    Get Quiz Details by ID
+// export const getQuizDetails = async (req, res) => {
+//     try {
+//         const { quizId } = req.params;
+//         const quiz = await Quiz.findOne({ _id: quizId, userId: req.user._id })
+//             .populate('documentId', 'title');
+        
+//         if (!quiz) return res.status(404).json({ success: false, message: "Quiz not found" });
+        
+//         res.status(200).json({ success: true, data: quiz });
+//     } catch (error) {
+//         console.error("❌ GET QUIZ DETAILS ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+
+// ye nya hai
+
+// import Document from "../models/Document.js";
+// import FlashCard from "../models/FlashCard.js";
+// import Quiz from "../models/Quiz.js";
+// import { extractTextFromPDF } from '../utils/pdfParser.js';
+// import { chunkText } from '../utils/textChunker.js';
+// import fs from 'fs/promises';
+// import axios from 'axios';
+// import crypto from 'crypto';
+
+// // --- HELPERS ---
+// const validateDoc = (doc) => {
+//     if (!doc || !doc.extractedText || doc.extractedText.trim().length === 0) {
+//         return "Document text is empty or missing.";
+//     }
+//     return null;
+// };
+
+// // List all flashcard generations for the authenticated user
+// export const getUserFlashcards = async (req, res) => {
+//     try {
+//         const flashcards = await FlashCard.find({ userId: req.user._id })
+//             .populate('documentId', 'title')
+//             .sort({ createdAt: -1 })
+//             .lean();
+//         res.status(200).json({ success: true, data: flashcards });
+//     } catch (error) {
+//         console.error("❌ GET USER FLASHCARDS ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // List flashcard generations for a specific document
+// export const getDocFlashcards = async (req, res) => {
+//     try {
+//         const { id } = req.params; // document id
+//         const flashcards = await FlashCard.find({ userId: req.user._id, documentId: id })
+//             .sort({ createdAt: -1 })
+//             .lean();
+//         res.status(200).json({ success: true, data: flashcards });
+//     } catch (error) {
+//         console.error("❌ GET DOC FLASHCARDS ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // Delete a single flashcard generation by its id
+// export const deleteFlashcard = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const deleted = await FlashCard.findOneAndDelete({ _id: id, userId: req.user._id });
+//         if (!deleted) return res.status(404).json({ success: false, message: "Flashcard not found" });
+//         res.status(200).json({ success: true, message: "Deleted" });
+//     } catch (error) {
+//         console.error("❌ DELETE FLASHCARD ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // 🔥 UPDATED processPDF: Ab ye Cloudinary URL se text extract karega
+// // 🔥 processPDF ko update karo
+// const processPDF = async (documentId, fileUrl) => {
+//     try {
+//         // Ab extractTextFromPDF URL handle kar sakta hai
+//         const { text } = await extractTextFromPDF(fileUrl); 
+//         const chunks = chunkText(text, 500, 50);
+        
+//         await Document.findByIdAndUpdate(documentId, {
+//             extractedText: text,
+//             chunks: chunks.map((chunk, index) => ({
+//                 content: chunk,
+//                 chunkIndex: index
+//             })),
+//             status: "ready"
+//         });
+//         console.log(`✅ Doc ${documentId} is now READY`);
+//     } catch (error) {
+//         console.error("❌ Process Error:", error.message);
+//         await Document.findByIdAndUpdate(documentId, { status: "failed" });
+//     }
+// };
+// // --- CRUD CONTROLLERS ---
+
+// // 🔥 FINAL FIX: uploadDocument function
+// export const uploadDocument = async (req, res) => {
+//     try {
+//         console.log("File received:", req.file); // 👈 Render logs mein check karna
+
+//         if (!req.file) {
+//             return res.status(400).json({ success: false, message: "No file uploaded" });
+//         }
+
+//         // Agar Cloudinary setup sahi hai, toh req.file.path mein "https://" aayega
+//         const fileUrl = req.file.path; 
+//         console.log("Cloudinary URL:", fileUrl); 
+
+//         const newDoc = await Document.create({
+//             userId: req.user._id,
+//             title: req.body.title || req.file.originalname,
+//             fileName: req.file.originalname,
+//             filePath: fileUrl, // ✅ Yahan pakka https wala link jayega
+//             filesize: req.file.size,
+//             status: "processing"
+//         });
+
+//         // Background processing
+//         processPDF(newDoc._id, fileUrl);
+
+//         res.status(201).json({ success: true, data: newDoc });
+//     } catch (error) {
+//         console.error("Upload Error:", error);
+//         res.status(500).json({ success: false, message: "Server Error" });
+//     }
+// };
+
+// // ye get document aur get documents ke liye 
+
+// // ✅ Single document fetch karne ke liye function
+// export const getDocument = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const document = await Document.findOne({ _id: id, userId: req.user._id });
+        
+//         if (!document) {
+//             return res.status(404).json({ success: false, message: "Document not found" });
+//         }
+        
+//         res.status(200).json({ success: true, data: document });
+//     } catch (error) {
+//         console.error("❌ GET DOCUMENT ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // ✅ Saare documents list karne ke liye (Agar Dashboard pe chahiye)
+// export const getDocuments = async (req, res) => {
+//     try {
+//         const docs = await Document.find({ userId: req.user._id }).sort({ createdAt: -1 });
+//         res.status(200).json({ success: true, data: docs });
+//     } catch (error) {
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+
+
+// export const deleteDocument = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const document = await Document.findById(id);
+
+//         if (!document) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: "Document not found"
+//             });
+//         }
+
+//         if (document.userId.toString() !== req.user._id.toString()) {
+//             return res.status(401).json({
+//                 success: false,
+//                 message: "Unauthorized"
+//             });
+//         }
+
+//         await Document.findByIdAndDelete(id);
+//         await Quiz.deleteMany({ documentId: id });
+//         await FlashCard.deleteMany({ documentId: id }); // Flashcards bhi clean karo
+
+//         res.status(200).json({
+//             success: true,
+//             message: "Document deleted successfully"
+//         });
+
+//     } catch (error) {
+//         console.error("❌ DELETE DOC ERROR:", error.message);
+//         res.status(500).json({
+//             success: false,
+//             message: "Server error"
+//         });
+//     }
+// };
+
+// export const updateDocument = async (req, res) => {
+//     try {
+//         const document = await Document.findOneAndUpdate(
+//             { _id: req.params.id, userId: req.user._id }, 
+//             { title: req.body.title }, 
+//             { new: true }
+//         );
+//         res.status(200).json({ success: true, data: document });
+//     } catch (error) { 
+//         res.status(500).json({ success: false, message: error.message }); 
+//     }
+// };
+
+// // --- CHAT LOGIC (GOOGLE GEMINI) ---
+// export const askAI = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const { question } = req.body;
+//         const document = await Document.findById(id);
+//         const apiKey = process.env.GEMINI_API_KEY;
+
+//         const errorMsg = validateDoc(document);
+//         if (errorMsg) return res.status(400).json({ success: false, message: errorMsg });
+
+//         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+//         const payload = {
+//             contents: [{
+//                 parts: [{ text: `You are an AI study assistant. Answer based ONLY on the provided text.\n\nText: ${document.extractedText.slice(0, 20000)}\n\nQuestion: ${question}` }]
+//             }]
+//         };
+
+//         const response = await axios.post(url, payload);
+//         if (response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+//             const answer = response.data.candidates[0].content.parts[0].text;
+//             return res.status(200).json({ success: true, answer });
+//         } else {
+//             throw new Error("Invalid response from Gemini AI");
+//         }
+//     } catch (error) {
+//         console.error("❌ CHAT ERROR:", error.message);
+//         res.status(error.response?.status || 500).json({ success: false, message: "AI Chat Error" });
+//     }
+// };
+
+// // Flashcard Generation
+// export const generateFlashcards = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const document = await Document.findById(id);
+//         if (!document) return res.status(404).json({ success: false, message: "Doc not found" });
+
+//         const validationError = validateDoc(document);
+//         if (validationError) return res.status(400).json({ success: false, message: validationError });
+
+//         const textLength = document.extractedText.length;
+//         const randomOffset = textLength > 3500 ? Math.floor(Math.random() * (textLength - 3500)) : 0;
+//         const textChunk = document.extractedText.slice(randomOffset, randomOffset + 3500);
+
+//         const variation = crypto.randomBytes(4).toString('hex');
+
+//         const prompt = `
+//             DOCUMENT CONTENT: ${textChunk}
+            
+//             TASK: Generate exactly 5 unique and highly educational flashcards from the text. 
+//             STRICT RULES:
+//             1. Return ONLY a valid JSON array: [{"question":"...","answer":"..."}].
+//             2. DO NOT include any markdown code blocks, just raw JSON.
+//             3. Focus on key terms, definitions, or complex concepts.
+//         `;
+
+//         const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+//             "model": "google/gemini-2.0-flash-001",
+//             "messages": [
+//                 { "role": "system", "content": `You are a study assistant. Seed: ${variation}` },
+//                 { "role": "user", "content": prompt }
+//             ],
+//             "temperature": 0.85
+//         }, {
+//             headers: { 
+//                 "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+//                 "Content-Type": "application/json"
+//             },
+//             timeout: 60000
+//         });
+
+//         const rawText = response.data?.choices?.[0]?.message?.content || "";
+//         const jsonMatch = rawText.match(/\[.*\]/s);
+
+//         if (!jsonMatch) throw new Error("AI returned invalid JSON for flashcards");
+//         const flashcards = JSON.parse(jsonMatch[0]);
+
+//         const savedFlashcards = await FlashCard.create({ 
+//             userId: req.user._id, 
+//             documentId: id, 
+//             cards: flashcards 
+//         });
+
+//         res.status(200).json({ success: true, flashcards: savedFlashcards.cards });
+        
+//     } catch (error) {
+//         console.error("❌ FLASHCARD ERROR:", error.message);
+//         res.status(500).json({ success: false, message: "Flashcard Generation Sync Error" });
+//     }
+// };
+
+// // --- QUIZ LOGIC ---
+// export const generateQuiz = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const { count = 10 } = req.body;
+//         const quizCount = Math.max(5, Math.min(15, parseInt(count) || 10));
+
+//         const document = await Document.findById(id);
+//         if (!document) return res.status(404).json({ success: false, message: "Text not ready" });
+
+//         const textLength = document.extractedText.length;
+//         const randomOffset = textLength > 4500 ? Math.floor(Math.random() * (textLength - 4500)) : 0;
+//         const context = document.extractedText.slice(randomOffset, randomOffset + 4500);
+        
+//         const variation = crypto.randomBytes(4).toString('hex');
+
+//         const prompt = `
+//             CONTEXT: ${context}
+//             TASK: Generate exactly ${quizCount} unique MCQs. 
+//             RULES: 
+//             - Return ONLY JSON: [{"question": "...", "options": ["a", "b", "c", "d"], "correctAnswer": "..."}]
+//             - Ensure accuracy and difficulty variety.
+//         `;
+
+//         const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+//             "model": "google/gemini-2.0-flash-001",
+//             "messages": [
+//                 { "role": "system", "content": `Random seed: ${variation}. Study assistant mode.` },
+//                 { "role": "user", "content": prompt }
+//             ],
+//             "temperature": 0.8
+//         }, {
+//             headers: { "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}` },
+//             timeout: 60000
+//         });
+
+//         const rawText = response.data?.choices?.[0]?.message?.content || "";
+//         const jsonMatch = rawText.match(/\[.*\]/s);
+        
+//         if (!jsonMatch) throw new Error("AI returned invalid JSON for quiz");
+//         res.status(200).json({ success: true, data: JSON.parse(jsonMatch[0]) });
+
+//     } catch (error) {
+//         console.error("❌ QUIZ ERROR:", error.message);
+//         res.status(500).json({ success: false, message: "Quiz Generation Error" });
+//     }
+// };
+
+// // @desc    Save Quiz Result
+// export const saveQuizResult = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const { score, totalQuestions, title, questions, userAnswers, timeSpent } = req.body;
+
+//         let quizTitle = title;
+//         if (!quizTitle) {
+//             const doc = await Document.findById(id);
+//             quizTitle = doc ? doc.title : "Untitled Quiz";
+//         }
+
+//         const quizResult = await Quiz.create({
+//             userId: req.user._id,
+//             documentId: id,
+//             title: quizTitle,
+//             score,
+//             totalQuestions,
+//             questions: questions || [],
+//             userAnswers: userAnswers || [],
+//             accuracy: (score / totalQuestions) * 100,
+//             xpEarned: score * 10,
+//             timeSpent: timeSpent || 0,
+//             status: 'completed'
+//         });
+
+//         res.status(201).json({ success: true, data: quizResult });
+//     } catch (error) {
+//         console.error("❌ SAVE QUIZ ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// // @desc    Get Quiz Details by ID
+// export const getQuizDetails = async (req, res) => {
+//     try {
+//         const { quizId } = req.params;
+//         const quiz = await Quiz.findOne({ _id: quizId, userId: req.user._id })
+//             .populate('documentId', 'title');
+        
+//         if (!quiz) return res.status(404).json({ success: false, message: "Quiz not found" });
+        
+//         res.status(200).json({ success: true, data: quiz });
+//     } catch (error) {
+//         console.error("❌ GET QUIZ DETAILS ERROR:", error.message);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+
+
+
+//ye ek aur naya
+
+
+import Document from "../models/Document.js";
+import FlashCard from "../models/FlashCard.js";
+import Quiz from "../models/Quiz.js";
+import { v2 as cloudinary } from 'cloudinary'; // 👈 YE LINE ADD KARO
+import { extractTextFromPDF } from '../utils/pdfParser.js';
+import { chunkText } from '../utils/textChunker.js';
+import axios from 'axios';
+import crypto from 'crypto';
+
+// --- HELPERS ---
+const validateDoc = (doc) => {
+    if (!doc || !doc.extractedText || doc.extractedText.trim().length === 0) {
+        return "Document text is empty or missing.";
+    }
+    return null;
+};
+
+// 1. Helper Function (Internal Use)
+const processPDF = async (documentId, buffer) => {
+    try {
+        console.log(`⏳ Processing PDF for ID: ${documentId}`);
+        
+        // Asli text extraction call
+        const result = await extractTextFromPDF(buffer); 
+        
+        if (!result || !result.text || result.text.trim().length < 10) {
+            throw new Error("Text extraction returned empty or too short.");
+        }
+
+        const fullText = result.text.trim();
+
+        // Database ko "READY" tabhi karo jab text mil jaye
+        await Document.findByIdAndUpdate(documentId, {
+            extractedText: fullText,
+            chunks: [{
+                content: fullText.slice(0, 5000), // AI ko pehla chunk dene ke liye
+                chunkIndex: 0,
+                pageNumber: 1
+            }],
+            status: "ready" 
+        });
+
+        console.log(`✅ Doc ${documentId} is now READY with ${fullText.length} characters.`);
+    } catch (error) {
+        console.error("❌ REAL EXTRACTION ERROR:", error.message);
+        
+        // Agar fail hua toh status 'failed' karo taaki chat API crash na ho
+        await Document.findByIdAndUpdate(documentId, { 
+            status: "failed",
+            extractedText: "Error: Could not extract text from this PDF." 
+        });
+    }
+};
+
+export const uploadDocument = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        // 🔥 CRITICAL FIX: Use resource_type: "raw" for PDFs to avoid 401 errors
+        // "raw" keeps files as-is (not converted to images), and they stay PUBLIC
+        const uploadToCloudinary = () => {
+            return new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    { 
+                        folder: "simplify_pdfs", 
+                        resource_type: "raw",  // 🔥 CHANGED FROM "auto" to "raw" for PDFs
+                        access_mode: "public"   // 🔥 ENSURE PUBLIC ACCESS
+                    },
+                    (error, result) => {
+                        if (result) resolve(result);
+                        else reject(error);
+                    }
+                );
+                stream.end(req.file.buffer);
+            });
+        };
+
+        const result = await uploadToCloudinary();
+        console.log("✅ PDF uploaded successfully to Cloudinary:", result.secure_url);
+        
+        // 1. Database mein entry create karo (Initial Status: processing)
+        const newDoc = await Document.create({
+            userId: req.user._id,
+            title: req.body.title || req.file.originalname,
+            fileName: req.file.originalname,
+            filePath: result.secure_url,
+            filesize: req.file.size,
+            status: "processing"
+        });
+
+        // 2. Background mein extraction trigger karo
+        processPDF(newDoc._id, req.file.buffer).catch(err => {
+            console.error("Background Trigger Failed:", err);
+        });
+
+        // 3. User ko turant response do (Status 201)
+        res.status(201).json({ 
+            success: true, 
+            message: "File uploaded successfully. Processing started...",
+            data: newDoc 
+        });
+
+    } catch (error) {
+        console.error("❌ UPLOAD API ERROR:", error.message);
+        res.status(500).json({ success: false, message: "Upload failed: " + error.message });
+    }
+};
+// --- CRUD & OTHERS (Stable Versions) ---
+export const getDocuments = async (req, res) => {
+    try {
+        const docs = await Document.find({ userId: req.user._id }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: docs });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getDocument = async (req, res) => {
+    try {
+        const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!document) return res.status(404).json({ success: false, message: "Document not found" });
+        res.status(200).json({ success: true, data: document });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const deleteDocument = async (req, res) => {
+    try {
+        const document = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!document) return res.status(404).json({ success: false, message: "Document not found" });
+
+        await Document.findByIdAndDelete(req.params.id);
+        await Quiz.deleteMany({ documentId: req.params.id });
+        await FlashCard.deleteMany({ documentId: req.params.id });
+
+        res.status(200).json({ success: true, message: "Document deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server error during deletion" });
+    }
+};
+
+// ... (getUserFlashcards, getDocFlashcards, deleteFlashcard logic same as yours, they are safe)
+export const getUserFlashcards = async (req, res) => {
+    try {
+        const flashcards = await FlashCard.find({ userId: req.user._id }).populate('documentId', 'title').sort({ createdAt: -1 }).lean();
+        res.status(200).json({ success: true, data: flashcards });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getDocFlashcards = async (req, res) => {
+    try {
+        const flashcards = await FlashCard.find({ userId: req.user._id, documentId: req.params.id }).sort({ createdAt: -1 }).lean();
+        res.status(200).json({ success: true, data: flashcards });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const deleteFlashcard = async (req, res) => {
+    try {
+        const deleted = await FlashCard.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+        if (!deleted) return res.status(404).json({ success: false, message: "Flashcard not found" });
+        res.status(200).json({ success: true, message: "Deleted" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updateDocument = async (req, res) => {
+    try {
+        const document = await Document.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id }, 
+            { title: req.body.title }, 
+            { new: true }
+        );
+        res.status(200).json({ success: true, data: document });
+    } catch (error) { 
+        res.status(500).json({ success: false, message: error.message }); 
+    }
+};
+
+// --- AI LOGIC (Using Groq - Free Alternative to Gemini) ---
+export const askAI = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { question } = req.body;
+        
+        console.log("🔍 Chat request received for doc:", id, "Question:", question?.slice(0, 50));
+        
+        if (!question || !question.trim()) {
+            return res.status(400).json({ success: false, message: "Question is required" });
+        }
+
+        const document = await Document.findById(id);
+        if (!document) {
+            console.error("❌ Document not found:", id);
+            return res.status(404).json({ success: false, message: "Document not found" });
+        }
+
+        if (!document.extractedText || document.extractedText.trim() === "") {
+            console.error("❌ Document has no extracted text");
+            return res.status(400).json({ success: false, message: "Document has no text content to analyze" });
+        }
+
+        const apiKey = process.env.GROQ_API_KEY;
+        if (!apiKey) {
+            console.error("❌ GROQ_API_KEY not configured");
+            return res.status(500).json({ success: false, message: "AI service not configured. Get free key at https://console.groq.com/keys" });
+        }
+
+        const contextText = document.extractedText.slice(0, 20000);
+        const payload = { 
+            model: "llama-3.3-70b-versatile",
+            messages: [
+                { 
+                    role: "user", 
+                    content: `You are an educational assistant. Based ONLY on the provided document content, answer the following question accurately and concisely. If the answer is not found in the document, explicitly say "This information is not available in the provided document."\n\nDocument:\n${contextText}\n\nQuestion: ${question}\n\nProvide a clear, direct answer using information from the document.` 
+                }
+            ],
+            temperature: 0.5,
+            max_tokens: 1024
+        };
+        
+        console.log("📤 Sending to Groq API...");
+        const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", payload, {
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            timeout: 30000
+        });
+        
+        const answer = response.data?.choices?.[0]?.message?.content;
+        if (!answer) {
+            console.warn("⚠️ Unexpected Groq response format:", JSON.stringify(response.data).slice(0, 200));
+            return res.status(500).json({ success: false, message: "Invalid response from AI service" });
+        }
+        
+        console.log("✅ AI Response received successfully");
+        res.status(200).json({ success: true, answer });
+    } catch (error) {
+        console.error("❌ ASK AI ERROR:", {
+            message: error.message,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            code: error.code
+        });
+        res.status(500).json({ success: false, message: "AI Chat Error: " + (error.response?.data?.error?.message || error.message || "Unknown error") });
+    }
+};
+
+export const generateFlashcards = async (req, res) => {
+    try {
+        const { count = 5 } = req.body; // Default 5, max 10
+        const finalCount = Math.min(Math.max(parseInt(count), 5), 10); // Enforce 5-10 range
+
+        const document = await Document.findById(req.params.id);
+        if (!document) return res.status(404).json({ success: false, message: "Document not found" });
+        
+        const valErr = validateDoc(document);
+        if (valErr) return res.status(400).json({ success: false, message: valErr });
+
+        const textChunk = document.extractedText.slice(0, 6000);
+        const timestamp = Date.now();
+        const randomSeed = Math.random().toString(36).substring(7);
+        const prompt = `CRITICAL - ALWAYS GENERATE NEW UNIQUE QUESTIONS: ${randomSeed}
+Generate exactly ${finalCount} COMPLETELY DIFFERENT flashcard Q&A pairs (NEVER repeat, NEVER duplicate). 
+Each time this runs, generate ENTIRELY DIFFERENT questions from different parts of the document.
+Return ONLY valid JSON with NO extra text:
+[{"question":"...?","answer":"...","difficulty":"easy"}]
+
+Document:
+${textChunk}
+
+MANDATORY REQUIREMENTS:
+✓ Generate EXACTLY ${finalCount} UNIQUE questions - IF RUN AGAIN, GENERATE COMPLETELY DIFFERENT ONES
+✓ Focus on DIFFERENT concepts each time
+✓ Questions: definitions, comparisons, applications, analysis, synthesis (vary types)
+✓ Answers: 2-3 sentences, detailed and clear
+✓ Difficulties: Mix easy/medium/hard
+✓ NEVER use same questions as before - diversity is critical
+✓ Return VALID JSON ARRAY ONLY - ${finalCount} items`;
+
+        console.log("📤 Generating flashcards (count: " + finalCount + ")...");
+        const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+            "model": "google/gemini-2.0-flash-001",
+            "messages": [{ "role": "user", "content": prompt }],
+            "temperature": 1.0,  // MAXIMUM randomness for flashcards
+            "top_p": 0.95  // High sampling diversity
+        }, { 
+            headers: { "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}` },
+            timeout: 30000
+        });
+
+        const rawText = response.data?.choices?.[0]?.message?.content || "";
+        console.log("Raw response:", rawText.slice(0, 100));
+        
+        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+            console.error("Could not parse JSON from:", rawText.slice(0, 200));
+            throw new Error("Invalid AI JSON response");
+        }
+
+        let cards = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(cards)) cards = [cards];
+        
+        // Ensure exactly finalCount items
+        cards = cards.slice(0, finalCount);
+        
+        const saved = await FlashCard.create({ 
+            userId: req.user._id, 
+            documentId: req.params.id, 
+            cards: cards 
+        });
+        
+        console.log("✅ Flashcards generated successfully:", cards.length);
+        res.status(200).json({ success: true, flashcards: saved.cards });
+    } catch (error) {
+        console.error("❌ GENERATE FLASHCARDS ERROR:", error.message);
+        res.status(500).json({ success: false, message: "Flashcard generation failed: " + error.message });
+    }
+};
+
+export const generateQuiz = async (req, res) => {
+    try {
+        const { count = 5 } = req.body; // Default 5, max 10
+        const finalCount = Math.min(Math.max(parseInt(count), 5), 10); // Enforce 5-10 range
+
+        const document = await Document.findById(req.params.id);
+        if (!document) return res.status(404).json({ success: false, message: "Document not found" });
+        
+        const valErr = validateDoc(document);
+        if (valErr) return res.status(400).json({ success: false, message: valErr });
+
+        const textChunk = document.extractedText.slice(0, 6000);
+        const timestamp = Date.now();
+        const randomSeed = Math.random().toString(36).substring(7);
+        const prompt = `CRITICAL - ALWAYS GENERATE NEW UNIQUE QUESTIONS: ${randomSeed}
+Generate exactly ${finalCount} COMPLETELY DIFFERENT MCQ questions (NEVER repeat, NEVER duplicate).
+Each time this runs, generate ENTIRELY DIFFERENT questions from different parts of the document.
+Return ONLY valid JSON with NO extra text:
+[{"question":"...?","options":["A","B","C","D"],"correctAnswer":"A","explanation":"...","difficulty":"medium"}]
+
+Document:
+${textChunk}
+
+MANDATORY REQUIREMENTS:
+✓ Generate EXACTLY ${finalCount} UNIQUE questions - IF RUN AGAIN, GENERATE COMPLETELY DIFFERENT ONES
+✓ Focus on DIFFERENT concepts each time - NO REPETITION
+✓ Each question: exactly 4 plausible options, only 1 correct
+✓ correctAnswer must be one of the 4 options
+✓ Question types: recall, comprehension, application, analysis (vary)
+✓ Explanations: Clear, brief, educational
+✓ Difficulties: Easy/medium/hard mix
+✓ NEVER use same questions as before - diversity is critical
+✓ Return VALID JSON ARRAY ONLY - ${finalCount} items`;
+
+        console.log("📤 Generating quiz (count: " + finalCount + ")...");
+        const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+            "model": "google/gemini-2.0-flash-001",
+            "messages": [{ "role": "user", "content": prompt }],
+            "temperature": 1.0,
+            "top_p": 0.95
+        }, { 
+            headers: { "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}` },
+            timeout: 30000
+        });
+
+        const rawText = response.data?.choices?.[0]?.message?.content || "";
+        console.log("Raw quiz response:", rawText.slice(0, 100));
+        
+        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+            console.error("Could not parse JSON from:", rawText.slice(0, 200));
+            throw new Error("Invalid AI JSON response");
+        }
+
+        let questions = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(questions)) questions = [questions];
+        
+        // Validate and ensure exactly finalCount items
+        questions = questions.slice(0, finalCount).map(q => ({
+            question: q.question || "Question",
+            options: Array.isArray(q.options) ? q.options.slice(0, 4) : ["A", "B", "C", "D"],
+            correctAnswer: q.correctAnswer || q.options?.[0] || "A",
+            explanation: q.explanation || "",
+            difficulty: q.difficulty || "medium"
+        }));
+
+        // Create quiz in DB
+        const quiz = await Quiz.create({
+            userId: req.user._id,
+            documentId: req.params.id,
+            title: `Quiz - ${document.title}`,
+            questions: questions,
+            userAnswers: [],
+            totalQuestions: questions.length,
+            accuracy: 0,
+            xpEarned: 0,
+            timeSpent: 0
+        });
+
+        console.log("✅ Quiz generated successfully:", questions.length);
+        res.status(200).json({ success: true, quiz });
+    } catch (error) {
+        console.error("❌ GENERATE QUIZ ERROR:", error.message);
+        res.status(500).json({ success: false, message: "Quiz generation failed: " + error.message });
+    }
+};
+
+export const saveQuizResult = async (req, res) => {
+    try {
+        const { quizId } = req.params; // Get quizId from route params
+        const { userAnswers } = req.body; // [{ questionIndex, selectedAnswer }, ...]
+
+        // Find the quiz
+        const quiz = await Quiz.findById(quizId);
+        if (!quiz) return res.status(404).json({ success: false, message: "Quiz not found" });
+        if (quiz.userId.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: "Unauthorized" });
+        }
+
+        // Calculate score and update userAnswers
+        let correctCount = 0;
+        const updatedAnswers = userAnswers.map((answer, idx) => {
+            const question = quiz.questions[answer.questionIndex];
+            const isCorrect = answer.selectedAnswer === question.correctAnswer;
+            if (isCorrect) correctCount++;
+            
+            return {
+                questionIndex: answer.questionIndex,
+                selectedAnswer: answer.selectedAnswer,
+                isCorrect: isCorrect,
+                answeredAt: new Date()
+            };
+        });
+
+        const totalQuestions = quiz.questions.length;
+        const accuracy = (correctCount / totalQuestions) * 100;
+        const score = correctCount;
+        const xpEarned = correctCount * 10; // 10 XP per correct answer
+
+        // Update quiz with results
+        quiz.userAnswers = updatedAnswers;
+        quiz.score = score;
+        quiz.accuracy = accuracy;
+        quiz.xpEarned = xpEarned;
+        quiz.status = 'completed';
+        await quiz.save();
+
+        console.log(`✅ Quiz completed: ${correctCount}/${totalQuestions} (${accuracy.toFixed(2)}%) - ${xpEarned} XP`);
+
+        res.status(200).json({ 
+            success: true, 
+            data: {
+                quizId: quiz._id,
+                score: correctCount,
+                totalQuestions: totalQuestions,
+                accuracy: accuracy.toFixed(2),
+                xpEarned: xpEarned,
+                userAnswers: updatedAnswers,
+                questions: quiz.questions
+            }
+        });
+    } catch (error) {
+        console.error("❌ SAVE QUIZ RESULT ERROR:", error.message);
+        res.status(500).json({ success: false, message: "Failed to save quiz result: " + error.message });
+    }
+};
+
+export const getQuizDetails = async (req, res) => {
+    try {
+        const quiz = await Quiz.findOne({ _id: req.params.quizId, userId: req.user._id }).populate('documentId', 'title');
+        res.status(200).json({ success: true, data: quiz });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
